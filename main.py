@@ -1,17 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 HidenCloud 自动续期 - 青龙面板适配版（完整版）
+https://github.com/vistal8/Hidencloud_QingLong/
 依赖：cloudscraper beautifulsoup4 requests
 Hidencloud 青龙面板续期脚本
-基于https://github.com/c935289832/hidencloud_renew 作者的脚本进行修改
+创建青龙变量HIDEN_COOKIE
+优化cookies 仅需要remember_web开头的cookies 第一次默认读取HIDEN_COOKIE第二次默认读取存储在本地的config.json的cookies 建议每6-10小时运行一次
 全部本地存储，建议文件夹内运行来保证路径清洁，避免配置文件被其他脚本覆盖
-至于cookies如何获取 https://dash.hidencloud.com/ 登陆这个网址 管理你的主机 然后通过cookie editor 导出cookies 测试只需要TOKEN=后面的即可 前面的不复制也可以登陆续期
-需要手动创建config.json文件 格式如下 
-{
-  "HIDEN_COOKIE": "",
-  "WP_APP_TOKEN_ONE": "",
-  "WP_UIDs": "",
-}
+增加wxpusher推送变量：WXPUSHER_APP_TOKEN WXPUSHER_UID 建议每个ip跑一个账号，不要用代理.避免被多账号检测！检测到就需要刷脸！！！而且成功率不高！
+青龙任务命令：task HidenCloud.py
 """
 
 import os
@@ -28,45 +25,45 @@ from urllib.parse import urljoin, unquote
 
 # ================= 配置加载（支持脚本同目录 config.json） =================
 def load_config():
-    """仅从脚本所在目录的 config.json 加载配置，支持青龙格式和直接键值对格式"""
-    # 1. 获取脚本所在目录的绝对路径
+    """优先从脚本所在目录的 config.json 加载配置，兼容青龙格式和直接键值对格式"""
+    # 获取脚本所在目录的绝对路径
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # 2. 锁定配置文件路径为脚本同级目录下的 config.json
     local_config = os.path.join(script_dir, 'config.json')
+    ql_old = '/ql/config/config.json'
+    ql_new = '/ql/data/config/config.json'
 
-    print(f"[配置加载] 脚本目录: {script_dir}")
-    print(f"[配置加载] 目标配置文件: {local_config}")
+    search_paths = [local_config, ql_old, ql_new]
+    #print(f"[配置加载] 脚本目录: {script_dir}")
+    #print(f"[配置加载] 尝试查找配置文件: {search_paths}")
 
-    # 3. 仅检查这一个路径
-    if os.path.exists(local_config):
-        try:
-            with open(local_config, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            # 判断是否为青龙格式：包含 "env" 字段且为列表
-            if isinstance(config.get('env'), list):
-                env_list = config['env']
-                for item in env_list:
-                    name = item.get('name')
-                    value = item.get('value')
-                    if name and value is not None:
-                        # 只有当环境变量不存在时才注入（优先保留系统环境变量）
-                        if name not in os.environ:
-                            os.environ[name] = str(value)
-                print(f"[配置加载] ✅ 成功加载 {len(env_list)} 个变量（青龙格式）")
-            else:
-                # 直接键值对格式
-                count = 0
-                for key, value in config.items():
-                    if isinstance(value, str) and key not in os.environ:
-                        os.environ[key] = value
-                        count += 1
-                print(f"[配置加载] ✅ 成功加载 {count} 个变量（键值对格式）")
-            return  # 加载成功后直接返回
-        except Exception as e:
-            print(f"[配置加载] ❌ 读取 {local_config} 失败: {e}")
-    else:
-        print(f"[配置加载] ⚠️ 未找到配置文件: {local_config}，将仅使用系统环境变量")
+    for path in search_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                # 判断是否为青龙格式：包含 "env" 字段且为列表
+                if isinstance(config.get('env'), list):
+                    env_list = config['env']
+                    for item in env_list:
+                        name = item.get('name')
+                        value = item.get('value')
+                        if name and value is not None:
+                            if name not in os.environ:
+                                os.environ[name] = str(value)
+                    #print(f"[配置加载] ✅ 从 {path} 加载了 {len(env_list)} 个变量（青龙格式）")
+                else:
+                    # 直接键值对格式（如您的 config.json）
+                    count = 0
+                    for key, value in config.items():
+                        if isinstance(value, str) and key not in os.environ:
+                            os.environ[key] = value
+                            count += 1
+                    #print(f"[配置加载] ✅ 从 {path} 加载了 {count} 个变量（键值对格式）")
+                return  # 加载成功后直接返回
+            except Exception as e:
+                print(f"[配置加载] ⚠️ 读取 {path} 失败: {e}")
+
+    print("[配置加载] 未找到任何配置文件，将仅使用系统环境变量")
 
 # 立即执行配置加载
 load_config()
@@ -76,11 +73,12 @@ DEFAULT_COOKIE_DOMAIN = '.dash.hidencloud.com'
 COOKIE_DOMAIN_OVERRIDES = {
     'cf_clearance': '.hidencloud.com',
 }
+# 只使用 remember_web cookie，其他 cookie 由 cloudscraper 自动处理
 CRITICAL_COOKIE_NAMES = {
-    'XSRF-TOKEN',
-    'hidencloud_session',
-    'cf_clearance',
-    'hc_cf_turnstile',
+    # 'XSRF-TOKEN',
+    # 'hidencloud_session',
+    # 'cf_clearance',
+    # 'hc_cf_turnstile',
 }
 CRITICAL_COOKIE_PREFIXES = (
     'remember_web_',
@@ -95,6 +93,7 @@ def _is_critical_cookie_name(name):
     return any(name.startswith(prefix) for prefix in CRITICAL_COOKIE_PREFIXES)
 
 def parse_seed_cookie_string(cookie_str):
+    """只提取 remember_web cookie"""
     deduped = {}
     for item in cookie_str.split(';'):
         if '=' not in item:
@@ -104,13 +103,15 @@ def parse_seed_cookie_string(cookie_str):
         value = value.strip()
         if not name:
             continue
-        deduped[name] = {
-            'name': name,
-            'value': value,
-            'domain': _domain_for_cookie(name),
-            'path': '/',
-            'secure': True,
-        }
+        # 只保留 remember_web 开头的 cookie
+        if name.startswith('remember_web_'):
+            deduped[name] = {
+                'name': name,
+                'value': value,
+                'domain': _domain_for_cookie(name),
+                'path': '/',
+                'secure': True,
+            }
     return list(deduped.values())
 
 def _cookie_score(record):
@@ -165,8 +166,8 @@ def log_print(msg):
 
 # ================= 消息推送模块 =================
 def send_notify(text, desp):
-    token = os.environ.get("WP_APP_TOKEN_ONE")
-    uids_str = os.environ.get("WP_UIDs")
+    token = os.environ.get("WXPUSHER_APP_TOKEN")
+    uids_str = os.environ.get("WXPUSHER_UID")
     if not token or not uids_str:
         log_print("⚠️ 未配置 WxPusher，跳过推送")
         return
@@ -689,18 +690,69 @@ class HidenCloudBot:
             self.log(f"❌ 支付失败: {e}")
             self.mark_retry_needed(f"账单 {normalized_current_url} 支付异常")
 
+# ================= 本地 Cookie 文件路径 =================
+LOCAL_COOKIE_FILE = os.path.join(os.path.dirname(__file__), 'cookie.json')
+
+def load_local_cookies():
+    """从本地文件加载 Cookie"""
+    if os.path.exists(LOCAL_COOKIE_FILE):
+        try:
+            with open(LOCAL_COOKIE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cookies = []
+            for i in range(1, 100):
+                key = f"cookie{i}"
+                if key in data and data[key]:
+                    cookies.append(data[key])
+                else:
+                    break
+            if cookies:
+                log_print(f"✅ 从本地文件加载了 {len(cookies)} 个 Cookie")
+                return cookies
+        except Exception as e:
+            log_print(f"⚠️ 读取本地 Cookie 文件失败: {e}")
+    return []
+
+def save_local_cookies(cookies_list):
+    """保存 Cookie 到本地文件"""
+    try:
+        data = {}
+        for i, cookie in enumerate(cookies_list, 1):
+            data[f"cookie{i}"] = cookie
+        with open(LOCAL_COOKIE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        log_print(f"💾 Cookie 已保存到本地文件: {LOCAL_COOKIE_FILE}")
+    except Exception as e:
+        log_print(f"⚠️ 保存本地 Cookie 文件失败: {e}")
+
 # ================= 主程序 =================
 if __name__ == '__main__':
     env_cookies = os.environ.get("HIDEN_COOKIE", "")
-    cookies_list = re.split(r'[&\n]', env_cookies)
-    cookies_list = [c for c in cookies_list if c.strip()]
+    
+    # 如果环境变量为空，尝试从本地文件读取
+    if not env_cookies:
+        log_print("⚠️ 环境变量 HIDEN_COOKIE 为空，尝试从本地文件读取...")
+        cookies_list = load_local_cookies()
+    else:
+        # 如果只有值没有名，自动补全前缀
+        if not env_cookies.startswith("remember_web_"):
+            log_print("⚠️ 检测到只有 Cookie 值，自动补全前缀...")
+            env_cookies = f"remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d={env_cookies}"
+        
+        cookies_list = re.split(r'[&\n]', env_cookies)
+        cookies_list = [c for c in cookies_list if c.strip()]
+        
+        # 保存到本地文件，供下次使用
+        if cookies_list:
+            save_local_cookies(cookies_list)
+    
     any_retry_needed = False
 
     if not cookies_list:
-        log_print("❌ 未配置环境变量 HIDEN_COOKIE")
+        log_print("❌ 未配置环境变量 HIDEN_COOKIE，也未找到本地 Cookie 文件")
         sys.exit(1)
 
-    log_print(f"\n=== HidenCloud 续期脚本启动 (青龙面板版) ===")
+    log_print(f"\n=== HidenCloud 续期脚本启动 (青龙面板版 - 仅 remember_web) ===")
 
     for i, cookie in enumerate(cookies_list):
         bot = HidenCloudBot(cookie, i)
