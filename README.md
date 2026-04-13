@@ -1,22 +1,17 @@
-# Hidencloud_QingLong
+HidenCloud 自动续期 - 青龙面板适配版（完整版）
+
+https://github.com/vistal8/Hidencloud_QingLong/
+
+依赖：cloudscraper beautifulsoup4 requests
+
 Hidencloud 青龙面板续期脚本
 
-基于https://github.com/c935289832/hidencloud_renew 作者的脚本进行修改
+创建青龙变量HIDEN_COOKIE
+
+优化cookies 仅需要remember_web开头的cookies 第一次默认读取HIDEN_COOKIE第二次默认读取存储在本地的config.json的cookies 建议每6-10小时运行一次
 
 全部本地存储，建议文件夹内运行来保证路径清洁，避免配置文件被其他脚本覆盖
 
-需要安装python依赖 cloudscraper  beautifulsoup4
+增加wxpusher推送变量：WXPUSHER_APP_TOKEN WXPUSHER_UID 建议每个ip跑一个账号，不要用代理.避免被多账号检测！检测到就需要刷脸！！！而且成功率不高！
 
-至于cookies如何获取 https://dash.hidencloud.com/ 登陆这个网址 管理你的主机 然后通过cookie editor 导出cookies 测试只需要TOKEN=后面的即可 前面的不复制也可以登陆续期
-
-需要手动创建config.json文件 格式如下 
-
-{
-
-  "HIDEN_COOKIE": "",
-  
-  "WP_APP_TOKEN_ONE": "",
-  
-  "WP_UIDs": "",
-  
-}
+青龙任务命令：task HidenCloud.py
